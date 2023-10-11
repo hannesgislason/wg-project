@@ -1,0 +1,402 @@
+---
+title: "Processing and filtering of single samples and merged samples with bcftools and PLINK"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+
+# Load libraries
+library(tidyverse)
+library(knitr)
+library(stringr)
+library(lubridate)
+
+# Set default echo = FALSE for all code chunks - to only list the results, not the code
+knitr::opts_chunk$set(echo = FALSE)
+
+# Set the default working directory for all code chunks
+knitr::opts_knit$set(root.dir = '/yourdata/autosomes')
+
+# Optional timer - to check the run time of the entire code within this document
+start_time <- now()
+
+# Set theme used for plotting - outcommented since no plotting here
+# theme_hg <- theme_bw 
+# theme_set(theme_hg(base_size = 12))
+
+```
+
+
+## Define filters and filename parameters
+
+```{r}
+
+# Define filter text and filter names used in testing different filters
+filter_settings <- 
+  tribble(
+    ~id, ~vcf_pass, ~qual_min, ~fdpu_min, ~fgtq_min, ~fdpu_max, 
+    1, "", "QUAL>30", "", "", "", 
+    2, "FILTER='PASS' &", "QUAL>30", "& FMT/DPU>10", "", "") %>% 
+  mutate(filter_txt= paste(vcf_pass, qual_min, fdpu_min, fgtq_min, fdpu_max, sep=" "),
+         filter_txt = str_trim(filter_txt),
+         filter_name = paste(
+           str_replace(vcf_pass, "FILTER='PASS' &", "pass."),
+           str_replace(qual_min, "QUAL>", "minQ"),
+           str_replace(fdpu_min, "& FMT/DPU>", ".minDPU"),
+           str_replace(fdpu_max, "& FMT/DPU<", ".maxDPU"),
+           str_replace(fgtq_min, "& FMT/GQ>", ".minGQ"),
+           ".", sep=""))
+
+```
+
+```{r}
+
+# Set the active filter used
+active_filter <- filter(filter_settings,
+                        id == 2) %>% select(filter_txt, filter_name)
+
+# Check output
+# active_filter
+```
+
+```{r}
+
+# Set variables filter_text and filter_name from the active filter
+filter_text <- active_filter$filter_txt
+filter_name <- active_filter$filter_name
+
+# Check output
+# filter_text
+# filter_name
+```
+
+
+```{r}
+
+# Write the variables to disk to be accessible to bash code chunks
+write_lines(filter_text, "filter_text.txt")
+write_lines(filter_name, "filter_name.txt")
+
+# Check the variables by reading them in again
+# read_lines("filter_text.txt")
+# read_lines("filter_name.txt")
+
+```
+
+```{r}
+
+# Set variable with the single sample names (vcf-files)
+snps_vcffiles <- "snps.sample*.auto.vcf.gz"
+
+# Write the variable to disk to be accessible to bash code chunks
+write_lines(snps_vcffiles, "snps_vcffiles.txt")
+
+# Check the variables by reading it in again
+# read_lines("snps_vcffiles.txt")
+
+```
+
+
+```{r}
+
+# Set variable with the merged sample name (vcf-file)
+merged_vcf <- paste(filter_name, "snps.mergedsample.auto.vcf.gz", sep="")
+
+# Write the variable to disk to be accessible to bash code chunks
+write_lines(merged_vcf, "merged_vcf.txt")
+
+# Check the variables by reading it in again
+# read_lines("merged_vcf.txt")
+
+```
+
+## Filter and merge the single sample files using bcftools, and create bcftools stats files
+
+```{bash}
+
+# Filter the single sample snps vcf-files based on the active filter_text
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+filter_text=$(cat filter_text.txt)
+filter_name=$(cat filter_name.txt)
+snps_vcffiles=$(cat snps_vcffiles.txt)
+
+#for vcf in $(find snps.sample*.auto.vcf.gz -type f)
+for vcf in $snps_vcffiles
+do
+    echo $vcf
+    out=$filter_name$vcf
+    echo $out
+    #echo $filter_text
+    # filter snps
+    /yourpath/bcftools filter -i "$filter_text" -Oz $vcf > $out
+    # index the vcf-output files
+    /yourpath/tabix -p vcf $out
+done
+
+```
+
+```{bash}
+
+# Create bcftools stats files for the filtered single sample vcf-files
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+# Output label
+statsfile=".stats"
+
+filter_name=$(cat filter_name.txt)
+snps_files=$(cat snps_vcffiles.txt)
+
+vcf_files=$filter_name$snps_files
+
+for vcf in $vcf_files
+do
+    filename=$vcf
+    # extract the filename without the .vcf.gz extension
+    out=$(basename "$filename" .vcf.gz)$statsfile
+    echo $filename
+    echo $out
+    /yourpath/bcftools stats $filename > $out
+done
+
+```
+
+```{bash}
+
+# Merge the filtered single sample files
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+filter_name=$(cat filter_name.txt)
+snps_files=$(cat snps_vcffiles.txt)
+
+vcf_files=$filter_name$snps_files
+echo $vcf_files
+
+out_file=$(cat merged_vcf.txt)
+echo $out_file
+
+#out_file=$filter_name$"snps.mergedsample.auto.vcf.gz"
+
+# merge .. merge VCF/BCF files from non-overlapping sample sets
+# --force-samples was used originally before reheading the samples - it is not needed after the reheading of samples
+
+# merge the single sample vcf-files for the active filter
+/yourpath/bcftools merge $vcf_files -Oz -o $out_file
+
+# index the merged vcf-file for the active filter
+/yourpath/tabix -p vcf $out_file
+
+```
+
+```{bash}
+
+# Create bcftools stats file for the merged file
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+merged_file=$(cat merged_vcf.txt)
+echo $merged_file
+
+# Output label
+statsfile=".stats"
+out=$(basename "$merged_file" .vcf.gz)$statsfile
+echo $out
+
+/yourpath/bcftools stats -s- $merged_file > $out
+
+```
+
+## Create plink binary fileset for merged_vcf and filter with PLINK
+
+```{r}
+
+# Prepare to create a plink binary fileset for file merged_vcf
+
+# plink output_prefix is the file name without the extension .vcf.gz
+output_prefix <- str_sub(merged_vcf, 1, -8)
+
+# Check variables
+# merged_vcf
+# output_prefix
+```
+
+
+```{r}
+
+# Create a plink binary fileset for file merged_vcf
+system(paste("/yourpath/plink --vcf",merged_vcf,"--keep-allele-order --make-bed --out",output_prefix))
+
+```
+
+```{r}
+
+# Prepare to create a plink binary fileset for the merged sample with unique ID's
+
+# input bed file prefix
+input_prefix <- str_sub(merged_vcf, 1, -8)
+
+# output bed file prefix
+output_prefix <- paste(input_prefix,".uid", sep="")
+
+# Check variables
+# input_prefix
+# output_prefix
+
+```
+
+```{r}
+
+# Create the plink binary fileset for the merged sample with unique ID's
+system(paste("/yourpath/plink --bfile",input_prefix,"--set-missing-var-ids @:# --make-bed --out",output_prefix))
+
+```
+
+```{r}
+
+# Prepare to create a filtered plink binary fileset for the merged sample with unique ID's
+
+# input bed file prefix
+input_prefix <- paste(str_sub(merged_vcf, 1, -8),".uid", sep = "")
+
+# output bed file prefix - the label ".f1m" refers to the PLINK filter used in next chunk
+output_prefix <- paste(input_prefix,".f1m", sep="")
+
+# Check variables
+# input_prefix
+# output_prefix
+
+```
+
+
+```{r, echo=FALSE}
+
+# Create a filtered (".f1m") plink binary fileset for the merged sample with unique ID's
+
+system(paste("/yourpath/plink --bfile",input_prefix,"--geno 0.1 --hwe 1e-7 --make-bed --out",output_prefix))
+
+```
+
+## Create plink binary fileset for single sample vcf’s and filter with PLINK
+
+```{r}
+# Create a filename pattern to use when listing files 
+# the "^" and "$" specify the start and end
+filename_pattern <- paste("^", filter_name, "snps.sample[1-8].auto.vcf.gz$", sep="")
+
+# Check variable
+# filename_pattern
+```
+
+
+```{r}
+
+# Create a parameter holding the vcf-filenames of the single samples
+samples <-
+  list.files(path = ".", 
+             pattern = filename_pattern,
+             full.names = FALSE)
+
+# Check variable
+# samples
+
+```
+
+
+```{r}
+
+# Create a plink binary fileset for the single sample vcf's in parameter samples
+
+vcf_file <- NULL
+output_prefix <- NULL
+for (vcf_file in samples) {
+  print(vcf_file)
+  
+  # plink output_prefix is the vcf_file name without the extension .vcf.gz
+  output_prefix <- str_sub(vcf_file, 1, -8)
+  print(output_prefix)
+  
+  # create a plink binary fileset:
+  system(paste("/yourpath/plink --vcf",vcf_file,"--keep-allele-order --make-bed --out",output_prefix))
+}
+
+```
+
+
+```{r}
+
+# Create a plink binary fileset with unique ID's for the single samples
+
+vcf_file <- NULL
+input_prefix <- NULL
+output_prefix <- NULL
+for (vcf_file in samples) {
+  #print(vcf_file)
+  
+  # input bed file prefix
+  input_prefix <- str_sub(vcf_file, 1, -8)
+  print(input_prefix)
+  
+  # output bed file prefix
+  output_prefix <- paste(input_prefix,".uid", sep="")
+  print(output_prefix)
+  
+  # create a plink binary fileset with unique ID's:
+  system(paste("/yourpath/plink --bfile",input_prefix,"--set-missing-var-ids @:# --make-bed --out",output_prefix))
+}
+
+```
+
+
+```{r}
+
+# Create a filtered plink binary fileset for the single samples with unique ID's
+
+vcf_file <- NULL
+input_prefix <- NULL
+output_prefix <- NULL
+for (vcf_file in samples) {
+  # print(vcf_file)
+  
+  # input bed file prefix
+  input_prefix <- paste(str_sub(vcf_file, 1, -8),".uid", sep = "")
+  print(input_prefix)
+  
+  # output bed file prefix
+  output_prefix <- paste(input_prefix,".f1", sep="")
+  print(output_prefix)
+  
+  # create the filtered (".f1") plink binary fileset:
+  system(paste("/yourpath/plink --bfile",input_prefix,"--mind 0.1 --geno 0.1 --hwe 1e-7 --make-bed --out",output_prefix))
+}
+
+```
+
+
+```{r}
+
+# Optionally calculate and list the run time for the entire code within this document
+end_time <- now()
+time_taken <- end_time - start_time
+time_taken
+
+# Time difference of 11.11857 mins
+
+```

@@ -1,0 +1,538 @@
+---
+title: "Additional file 5 -  Supplementary tables of SNPs, heterozygosity and relatedness"
+output:
+  pdf_document: default
+  html_document: default
+---
+\renewcommand{\figurename}{Figure}
+\renewcommand{\thefigure}{S5.\arabic{figure}}
+\renewcommand{\tablename}{Table}
+\renewcommand{\thetable}{S5.\arabic{table}}
+
+```{r setup, include=FALSE}
+
+# The following analysis is both for single samples and eight merged samples
+# Lines starting with a #-sign are outcommented comments or optional code for testing purposes
+
+# Load libraries
+library(tidyverse)
+library(knitr)
+library(broom)
+library(stringr)
+library(lubridate)
+
+# Set default echo = FALSE for all code chunks - to only list the results, not the code
+knitr::opts_chunk$set(echo = FALSE)
+
+# Set the default working directory for all code chunks
+knitr::opts_knit$set(root.dir = '/yourdata/autosomes')
+
+# Optional timer - to check the run time of the entire code within this document
+# start_time <- now()
+
+# Set theme used for plotting
+theme_hg <- theme_bw 
+theme_set(theme_hg(base_size = 12))
+
+```
+
+```{r}
+
+# Source a file with own summary functions into local environment - to minimize repetition of code
+source("summary_functions.R", local = TRUE)
+
+```
+
+
+```{r}
+
+# Set filter name, text for a fixed filter - the advanced filter - outcomment if using a variable filter (next chunk)
+filter_name <- "pass.minQ30.minDPU10."
+filter_text <- "FILTER='PASS' & QUAL>30 & FMT/DPU>10"
+
+# Set merged_vcf file name for a fixed filter - the advanced filter - outcomment if using a variable filter (next chunk)
+merged_vcf <- "pass.minQ30.minDPU10.snps.mergedsample.auto.vcf.gz"
+
+```
+
+```{r}
+
+# Optional - set filter name, text for a variable filter for testing (the last used when generating filtered vcf-files)
+# filter_name <- read_lines("filter_name.txt")
+# filter_text <- read_lines("filter_text.txt")
+
+# Optional - set merged_vcf file name for a variable filter for testing (the last used when generating filtered vcf-files)
+# merged_vcf <- read_lines("merged_vcf.txt")
+
+```
+
+
+```{r}
+
+# Set the file-pattern used for the individual samples
+pattern_uid <- paste("^", filter_name, "snps.sample[1-8].auto.uid.bed$", sep="")
+
+
+# Check output
+# pattern_uid
+
+# Create a parameter holding the single sample filenames with unique ID's in plink format
+bedfiles_uid <-
+  list.files(path = ".", 
+             pattern = pattern_uid,
+             full.names = FALSE)
+
+# Check output
+# bedfiles_uid
+
+# Remove the extension .bed from each filename
+bedfiles_uid <- str_sub(bedfiles_uid, 1, -5)
+
+# Check output
+# bedfiles_uid
+```
+
+
+The number of SNPs, the heterozygosity and the relatedness were found from autosome variant files (`.vcf`) containing both SNPs and Indels that we filtered with BCFTools to only include SNPs (`bcftools filter -i TYPE='snp'`). We quality-filtered (`bcftools filter -i FILTER='PASS' & QUAL>30 & FMT/DPU>10`) and merged the sample files (`--bcftools merge`). With PLINK software, we converted the quality-filtered SNPs (`.vcf`) files to PLINK format (`.bed`) with missing variant ID's replaced with unique ID's. We made quality control reports with KING (`king --bysample`, `king --bySNP`) to investigate the missing rate, the number of SNPs and the heterozygosity, and we studied relatedness with KING (`king --kinship`). The effect of merging on the missing rate, $N_{SNP}$, $H$ and $R$ was studied both before and after applying a PLINK filter for genotype missingness and Hardy-Weinberg (H-W) equilibrium threshold (`--geno 0.1 --hwe 1e-7 `). For further details see Methods in the main manuscript.
+
+```{r}
+
+# Create a table for the filter-text
+filter_table <- tibble(
+  `Autosome files` = "SNP VCFs",
+  `Filter-text` = filter_text
+)
+
+
+# Output the filter-text table
+kable(filter_table,
+       caption = "Filter (`bcftools filter -i`) used to filter the SNP files before further processing with PLINK and KING." )
+
+```
+
+
+```{r}
+
+# Parameter holding the merged sample filename with unique ID's in PLINK format for use with PLINK
+merged_uid <- paste(str_sub(merged_vcf, 1, -8), ".uid", sep="")
+
+# KING needs the .bed file extension for input files
+merged_bed <- paste(merged_uid, ".bed", sep="")
+
+# Output parameter for king quality reports that append the bySample.txt, bySNP.txt extensions in output
+merged_prefix <- paste(merged_uid, ".king.", sep="")
+
+# Check output
+# merged_bed
+# merged_prefix
+
+```
+
+```{r}
+
+# Parameter holding the merged sample filenames with unique ID's that are filtered (f1m) in PLINK
+merged_f1mbed <- paste(merged_uid, ".f1m.bed", sep="")
+
+# Output parameter for king quality reports for the merged and filtered (f1m) file
+merged_f1mprefix <- paste(merged_uid, ".f1m.king.", sep="")
+
+# Check output
+# merged_f1mbed
+# merged_f1mprefix
+
+```
+
+
+```{r}
+
+# Create quality reports with KING for each single sample bed-files with unique ID's
+
+bed_name <- NULL
+bysample_table <- NULL
+for (bed_name in bedfiles_uid) {
+  
+  # For the King-input, append the ".bed" file-extension to the plink filename as required by King
+  bed_file <- paste(bed_name,".bed", sep="")
+  # print(bed_file)
+  
+  # Prefix for king output
+  king_prefix <- paste(bed_name,".king.", sep="")
+  # print(king_prefix)
+  
+  # Create missing report with KING for each sample
+  system(paste("/yourpath/king -b",bed_file,"--bysample --prefix",king_prefix))
+  
+  # Read missing report for each sample
+  bysample_table <- rbind(bysample_table,
+                          read_table2(paste(king_prefix,"bySample.txt", sep=""),
+                                      col_types = cols()))
+}
+
+# Check output
+# bysample_table
+# summary(bysample_table$Heterozygosity)
+
+```
+
+```{r}
+
+# Select columns for output
+bysample_table_out <- select(bysample_table, IID, N_SNP, Missing, H = Heterozygosity)
+
+# Print the output
+kable(bysample_table_out,
+      caption = "The KING quality control report (`--bysample`) for the single samples. Note the low missing rate.", digits = 4)
+
+```
+
+```{r}
+
+# Make summary of N_SNP for single samples
+NSNP_summary_singlesamples <- SingleSamplesSummary(variable = bysample_table$N_SNP)
+
+# Output the summary
+kable(NSNP_summary_singlesamples,
+      caption = "Summary of $N_{SNP}$ on autosomes from the KING quality control (`--bysample`) for the eight single samples ($n=1$). ", digits = 0)
+
+```
+
+
+```{r}
+
+# Make summary of H for single samples
+H_summary_singlesamples <- SingleSamplesSummary(variable = bysample_table$Heterozygosity)
+
+# Output the summary
+kable(H_summary_singlesamples,
+      caption = "Summary of $H$ on autosomes from the KING quality control (`--bysample`) for the eight single samples ($n=1$). ", digits = 4)
+
+```
+
+
+
+```{r}
+
+# Create quality report with KING for the merged (n=8) sample bed-file with unique ID's
+system(paste("/yourpath/king -b",merged_bed,"--bysample --prefix",merged_prefix))
+
+# Read in the report
+bysample_merged <- read_table2(paste(merged_prefix,"bySample.txt", sep=""),
+                               col_types = cols())
+
+# Select columns for output
+bysample_merged_out <- select(bysample_merged, IID, N_SNP, Missing, H = Heterozygosity)
+
+kable(bysample_merged_out,
+      caption = "The KING quality control (`--bysample`) for the merged samples. Note the much higher missing rate for the merged samples while both $N_{SNP}$ and $H$ are similar to the values for the single samples. This is because the merging of samples marks the SNPs as missing that are not common to all the samples in the merged dataset.", digits = 4)
+
+```
+
+
+
+```{r}
+
+# Make summary of N_SNP for merged samples
+NSNP_summary_merged <- MergedSamplesSummary(variable = bysample_merged$N_SNP)
+
+# Check output
+# NSNP_summary_merged
+
+```
+
+```{r}
+
+# make summary of H for merged samples
+H_summary_merged <- MergedSamplesSummary(variable = bysample_merged$Heterozygosity)
+
+# Check output
+# H_summary_merged
+
+```
+
+
+```{r}
+
+# Calculate the king kinship based on the merged file before genotype filtering.
+
+# Remove the punktuation mark at the end of prefix, since king --kinship adds one itself
+kinship_prefix <- str_sub(merged_prefix, 1, -2)
+
+# Check prefix
+# kinship_prefix
+
+# Calculate the king kinship
+system(paste("/yourpath/king -b",merged_bed,"--kinship --prefix",kinship_prefix))
+
+# Read the kinship report
+kinship_merged <- read_table2(paste(kinship_prefix,".kin0", sep=""),
+                                     col_types = cols())
+
+# Add column relatedness as 2 x kinship
+kinship_merged <- mutate(kinship_merged, R = 2*Kinship)
+
+# select columns for output
+# kinship_merged_out <- select(kinship_merged, ID1, ID2, N_SNP, HetHet, IBS0, Kinship, R)
+
+# output the table
+# kable(kinship_merged_out,
+#       caption = "The KING kinship report (`--kinship`) for the $n=8$ merged sample file before filtering.", digits = 4)
+
+```
+```{r}
+
+# Make summary of pairwise R
+R_summary_merged <- MergedSamplesSummary(variable = kinship_merged$R)
+
+# Check output
+# R_summary_merged
+```
+
+```{r}
+
+# Make summary of N_SNP used in calculating pairwise R
+Pairwise_NSNP_summary_merged <- MergedSamplesSummary(variable = kinship_merged$N_SNP)
+
+# Check output
+# Pairwise_NSNP_summary_merged
+
+```
+
+
+```{r}
+
+# Create quality reports bySample with KING for the merged (n=8) sample bed-file with unique ID's and filtered
+
+# Create quality report with KING
+system(paste("/yourpath/king -b",merged_f1mbed,"--bysample --prefix",merged_f1mprefix))
+
+# Read the report
+bysample_merged_filtered <- 
+  read_table2(paste(merged_f1mprefix,"bySample.txt", sep=""),
+              col_types = cols())
+
+# Select columns for output
+bysample_merged_filtered_out <- 
+  select(bysample_merged_filtered, IID, N_SNP, Missing, H = Heterozygosity)
+
+# Print the output
+kable(bysample_merged_filtered_out,
+      caption = "The KING quality control report (`--bysample`) for the eight merged samples after missing genotype filtering (`--geno 0.1`). Note the large decreases in both $N_{SNP}$ and $H$ as compared to Table S5.5. The missing column is $0$ since all missing genotypes have been filtered out and $N_{SNP}$ becomes equal for all the samples.", digits = 4)
+
+```
+
+```{r}
+
+# Make summary of N_SNP for merged samples after missing genotype filtering
+NSNP_summary_merged_filtered <- MergedSamplesSummary(variable = bysample_merged_filtered$N_SNP)
+
+# Check output
+# NSNP_summary_merged_filtered
+```
+
+
+```{r}
+
+# Make summary of H for merged samples after missing genotype filtering
+H_summary_merged_filtered <- MergedSamplesSummary(variable = bysample_merged_filtered$Heterozygosity)
+
+# Check output
+# H_summary_merged_filtered
+
+```
+
+
+```{r}
+
+# Combine the two summaries into one
+NSNP_summary <- rbind(NSNP_summary_merged,
+                      NSNP_summary_merged_filtered)
+
+# Output the summary
+kable(NSNP_summary,
+      caption = "Summary of $N_{SNP}$ on autosomes from the KING quality control (`--bysample`) for the merged samples ($n=8$) before (first row) and after (second row) missing genotypes filtering. Note the similarity of $N_{SNP}$ before the filtering with $N_{SNP}$ for single samples in Table S5.3.", digits = 0)
+
+```
+
+
+```{r}
+
+# Combine the two summaries into one
+H_summary <- rbind(H_summary_merged,
+                   H_summary_merged_filtered)
+
+# Output the summary
+kable(H_summary,
+      caption = "Summary of the heterozygosity $H$ on autosomes from the KING quality control (`--bysample`) for the merged samples ($n=8$) before and after missing genotypes filtering. Note the similarity of $H$ before the filtering with $H$ for single samples in Table S5.4", digits =4)
+
+```
+
+
+```{r}
+
+# Calculate the king kinship based on the merged file after missing genotype filtering.
+
+# Parameter holding the merged sample filenames with unique ID's that are filtered (f1m) in PLINK
+
+# Check parameter
+# merged_f1mbed 
+
+# Output parameter for king reports for the merged and filtered (f1m) file
+# Remove the punktuation mark at the end of prefix, since king --kinship adds one itself
+kinship_prefix <- str_sub(merged_f1mprefix, 1, -2)
+
+# Check prefix
+# kinship_prefix
+
+# Calculate the king kinship
+system(paste("/yourpath/king -b",merged_f1mbed,"--kinship --prefix",kinship_prefix))
+
+# Read the kinship report
+kinship_merged_filtered <- read_table2(paste(kinship_prefix,".kin0", sep=""),
+                                       col_types = cols())
+
+# Add column relatedness as 2 x kinship
+kinship_merged_filtered <- mutate(kinship_merged_filtered, R = 2*Kinship)
+
+# Check the output
+# kinship_merged_filtered
+
+# Select columns for output
+# kinship_merged_filtered_out <- select(kinship_merged_filtered, ID1, ID2, N_SNP, HetHet, IBS0, Kinship, R)
+
+# output the table
+# kable(kinship_table_f1mout,
+#       caption = "The KING kinship report (`--kinship`) for the $n=8$ merged sample file after filtering.", digits = 4)
+
+```
+
+```{r}
+
+# Make summary of pairwise R after missing genotype filtering
+R_summary_merged_filtered <- MergedSamplesSummary(variable = kinship_merged_filtered$R)
+
+# Check output
+# R_summary_merged_filtered
+
+```
+
+```{r}
+
+# Make summary of N_SNP used to calculate pairwise R after missing genotype filtering
+Pairwise_NSNP_summary_merged_filtered <- MergedSamplesSummary(variable = kinship_merged_filtered$N_SNP)
+
+# Check output
+# Pairwise_NSNP_summary_merged_filtered
+
+```
+
+
+```{r}
+
+# Combine the summaries before and after missing genotype filtering
+R_summary <- rbind(R_summary_merged,
+                   R_summary_merged_filtered)
+
+# Output the summary
+kable(R_summary,
+      caption = "Summary of the pairwise relatedness $R$ on autosomes from the KING (`--kinship`) report for the eight merged samples ($n=8$) before and after missing genotypes filtering. Here, the number of values is $28$ since there are $28$ possible pairwise relationships between eight samples.", digits = 4)
+
+```
+```{r}
+
+# Combine the summaries before and after missing genotype filtering
+Pairwise_NSNP_summary <- rbind(Pairwise_NSNP_summary_merged,
+                               Pairwise_NSNP_summary_merged_filtered)
+
+# Output the summary
+kable(Pairwise_NSNP_summary,
+      caption = "Summary of the $N_{SNP}$ from the KING (`--kinship`) report used to calculate pairwise relatedness for the eight merged samples before and after missing genotypes filtering. Here, $N_{SNP}$ is the number of SNPs shared between the two samples of each relationship. It is lower than the $N_{SNP}$ of both the single samples (Table S5.3) and the merged samples (Table S5.7) before missing genotype filtering. It is the same as the $N_{SNP}$ for merged samples after missing genotype filtering where all the samples share the same SNPs.", digits = 0)
+
+```
+
+
+```{r}
+
+# Create quality report bySNP with KING for the merged (n=8) sample bed-file with unique ID's
+system(paste("/yourpath/king -b",merged_bed,"--bySNP --prefix",merged_prefix))
+
+# Read in the bySNP report
+bySNP_merged <- read_table2(paste(merged_prefix,"bySNP.txt", sep=""),
+                            col_types = cols())
+
+# Check output
+# bySNP_merged
+
+```
+
+
+
+```{r}
+
+# Summarise grouped by N the bySNP quality report and calculate H - before missing genotype filtering
+summarise_bySNP_merged_grouped_N <- MergedSamplesSummariseObjectForeachN(object_name = bySNP_merged)
+
+# Output the summary
+kable(summarise_bySNP_merged_grouped_N,
+      caption = "Summary of the KING quality report (`--bySNP`) for the eight merged samples before missing genotype filtering. The summary is grouped by the number of samples $N$ with non-missing genotypes. The $H$ across SNPs is highest for the SNPs only called in one sample and lowest for the SNPs called in all samples.", digits = 4)
+```
+
+```{r}
+
+# Summarise the bySNP quality report and calculate overall H - before missing genotype filtering - not grouped by N
+summarise_bySNP_merged <- MergedSamplesSummariseObjectForallN(object_name = bySNP_merged)
+
+# Check output
+# summarise_bySNP_merged
+
+```
+
+
+```{r}
+
+# Create quality report bySNP with KING for the merged sample with unique ID's and filtered
+system(paste("/yourpath/king -b",merged_f1mbed,"--bySNP --prefix",merged_f1mprefix))
+
+# Read the report
+bySNP_merged_filtered <- 
+  read_table2(paste(merged_f1mprefix,"bySNP.txt", sep=""),
+              col_types = cols())
+
+```
+
+
+```{r}
+
+# Summarise the bySNP quality report and calculate H - after missing genotype filtering - and grouped by N (there is only N=8)
+summarise_bySNP_merged_filtered <- 
+  MergedSamplesSummariseObjectForeachN(object_name = bySNP_merged_filtered) %>% 
+  select(-CallRate)
+
+
+# Check output
+# summarise_bySNP_merged_filtered
+
+```
+
+```{r}
+
+# Combine the summaries 
+summarise_bySNP <- rbind(summarise_bySNP_merged,
+                       summarise_bySNP_merged_filtered) 
+
+
+# Output the summary
+kable(summarise_bySNP,
+      caption = "Summary of the KING quality report (`--bySNP`) for the merged samples both before and after missing genotype filtering (`--geno 0.1`). The overall $H$ is calculated from the number of heterozygous genotypes divided by the total number of genotypes. Without the missing genotype filter it is equal to the mean $H$ for the single samples (Table S5.4). With the filter it is the same as $H$ for the SNPs called in all samples (Table S5.11, last row).", digits = 4)
+
+```
+
+```{r}
+
+# Optionally calculate and list the run time for the entire code within this document
+# end_time <- now()
+# time_taken <- end_time - start_time
+# time_taken
+# Time difference of 1.419761 mins
+
+```
+

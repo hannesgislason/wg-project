@@ -1,0 +1,528 @@
+---
+title: "Additional file 2 -  Supplementary tables and figures of _ROH_"
+author:
+date:
+output:
+  pdf_document: default
+  html_document: default
+---
+\renewcommand{\figurename}{Figure}
+\renewcommand{\thefigure}{S2.\arabic{figure}}
+\renewcommand{\tablename}{Table}
+\renewcommand{\thetable}{S2.\arabic{table}}
+
+```{r setup, include=FALSE}
+
+# The following analysis is for the eight merged samples
+# Lines starting with a #-sign are outcommented comments or optional code for testing purposes
+
+# Load libraries
+library(tidyverse)
+library(knitr)
+library(scales)
+library(lubridate)
+
+# Set default echo = FALSE for all code chunks - to only list the results, not the code
+knitr::opts_chunk$set(echo = FALSE)
+
+# Set the default working directory for all code chunks
+knitr::opts_knit$set(root.dir = '/yourdata/autosomes')
+
+# Optional timer - to check the run time of the entire code within this document
+# start_time <- now()
+
+# Set theme used for plotting
+theme_hg <- theme_bw 
+theme_set(theme_hg(base_size = 12))
+
+```
+
+
+```{r}
+
+# Source a file with own summary functions into local environment - to minimize repetition of code
+source("summary_functions.R", local = TRUE)
+
+```
+
+
+```{r}
+
+# Set filter text for a fixed filter - the basic filter - outcomment if using a variable filter (next chunk)
+filter_text <- "QUAL>30"
+
+# Set merged_vcf file name for a fixed filter - the basic filter - outcomment if using a variable filter (next chunk)
+merged_vcf <- "minQ30.snps.mergedsample.auto.vcf.gz"
+
+# Set file name of ROH report saved to disk
+
+rohreport_name <- "rohreportAddfile2.csv"
+
+```
+
+```{r}
+
+# Optional - set filter text for a variable filter for testing (the last used when generating filtered vcf-files)
+# filter_text <- read_lines("filter_text.txt")
+
+# Optional - set merged_vcf file name for a variable filter for testing (the last used when generating filtered vcf-files)
+# merged_vcf <- read_lines("merged_vcf.txt")
+
+```
+
+
+```{r}
+
+# Create a table for the filter-text
+filter_table <- tibble(
+  `Autosome files` = "SNP VCFs",
+  `Filter-text` = filter_text
+)
+
+
+# Output the filter-text table
+kable(filter_table,
+       caption = "Filter (`bcftools filter -i`) used to filter the SNP files before further processing with PLINK." )
+
+```
+
+```{r}
+
+# Parameter holding the merged sample filename with unique ID's and filtered (f1m) for use with PLINK
+bed_name <- paste(str_sub(merged_vcf, 1, -8), ".uid.f1m", sep="")
+
+# Prefix for ROH output-report
+plink_prefix = paste(bed_name,".plink", sep="")
+
+# A common name for the 50 ROH output reports that we read in and overwrite for each iteration of hkb (next chunk)
+roh_output <- paste(bed_name, ".plink.hom.indiv", sep="")
+
+# Check output
+# bed_name
+# plink_prefix
+# roh_output
+
+```
+
+
+```{r}
+
+# Create roh reports with PLINK for the merged sample bed-file that is filtered
+
+roh_report <- NULL
+hzyg_vector <- NULL
+hkb <- NULL
+
+# Define the minimum ROH length - we use 50 values in steps of 100
+hzyg_vector <- seq(100, 5000, 100)
+
+# Loop over the hkb values to create a ROH report for each minimum ROH length
+for (hkb in hzyg_vector) {
+  
+  # Parameter to hold the ROH-report for the current loop-value of hkb
+  roh_report_hkb <- NULL
+  
+  # Construct the ROH call for current loop-value minimum ROH length hkb
+  roh_call <- paste("--homozyg --homozyg-kb",hkb,"--out")
+  
+  # Create the roh report with PLINK  
+  system(paste("/yourpath/plink -bfile",bed_name,roh_call,plink_prefix))
+  
+  # Read in the ROH report for the current loop-value of hkb
+  roh_report_hkb <- read_table(roh_output, col_types = cols()) 
+  
+  # Add the loop-value minimum ROH length hkb
+  roh_report_hkb <- mutate(roh_report_hkb, `homz-kb` = hkb)
+  
+  # Append the roh report of eight samples (eight rows) for current value of hkb
+  roh_report <- rbind(roh_report, roh_report_hkb)
+}
+# Skip to include the FID column, since it is identical to the IID column in our case
+roh_report <- select(roh_report, -FID)
+
+# roh_report
+# FID	Family ID (not selected in output)
+# IID	Within-family ID
+# PHE	Phenotype value
+# NSEG	Number of runs of homozygosity
+# KB	Total length of runs (kb)
+# KBAVG	Average length of runs (kb)
+# # https://www.cog-genomics.org/plink/1.9/formats#hom_indiv
+
+# I added the column homz-kb
+
+# Check output (number of rows = number of samples x number of hkb-values = 8 * 50 = 400)
+# roh_report
+
+```
+
+```{r}
+
+# Add the columns Mb, L_AUT, F_ROH, R_ROH
+roh_report <- mutate(roh_report,
+                     
+                     # The minimum ROH length in each iteration in unit Mb
+                     Mb = `homz-kb`/1000,
+                     
+                     # Set the autosome length (Ch37 build)
+                     L_AUT = 2881033286/1000,
+                     
+                     # Calculate the inbreeding based on ROH
+                     F_ROH = KB/L_AUT,
+                     
+                     # Calculate the parental relatedness based on ROH
+                     R_ROH = 2*F_ROH
+)
+
+# Check output (number of rows = number of samples x number of hkb-values = 8 * 50 = 400)
+# roh_report
+
+```
+
+```{r}
+# Write the ROH report to disk
+write_csv(roh_report, rohreport_name)
+```
+
+
+```{r}
+
+# Create summary table for the number of ROHs grouped by the minimum ROH size
+roh_NSEG <- SummariseROHs(object_name = roh_report, variable = "NSEG")
+
+# Create summary table for the total ROH (KB/1000) grouped by the minimum ROH size 
+roh_KB <- SummariseROHs(object_name = roh_report, variable = "KB")  
+
+# Create summary table for the average ROH (KBAVG/1000) grouped by the minimum ROH size
+roh_KBAVG <- SummariseROHs(object_name = roh_report, variable = "KBAVG") 
+
+# Create summary table for the inbreeding F_ROH grouped by the minimum ROH size
+roh_FROH <- SummariseROHs(object_name = roh_report, variable = "F_ROH") 
+
+# Create summary table for the relatedness R_ROH grouped by the minimum ROH size
+roh_RROH <- SummariseROHs(object_name = roh_report, variable = "R_ROH") 
+
+```
+
+```{r}
+
+# Output the summary table of the number of ROHs
+kable(roh_NSEG,
+      caption = "Summary of the number of runs of homozygosity $NSEG$ on autosomes from the PLINK report (`--homozyg --homozyg-kb`) for variable minimum _ROH_ length (Mb).", digits = 1)
+  
+# Output the summary table of the total ROH
+kable(roh_KB,
+      caption = "Summary of the total length of runs $KB/1000$ on autosomes from the PLINK report (`--homozyg --homozyg-kb`) for variable minimum _ROH_ length (Mb).", digits = 1)
+
+# Output the summary table of the average ROH
+kable(roh_KBAVG,
+      caption = "Summary of the average length of runs $KBAVG/1000$ on autosomes from the PLINK report (`--homozyg --homozyg-kb`) for variable minimum _ROH_ length (Mb).", digits = 2)
+
+# Output the summary table of the inbreeding F_ROH
+kable(roh_FROH,
+      caption = "Summary of the inferred inbreeding $F_{ROH}$ on autosomes from the PLINK report (`--homozyg --homozyg-kb`) for variable minimum _ROH_ length (Mb).", digits = 3)
+
+# Output the summary table of the relatedness R_ROH
+kable(roh_RROH,
+      caption = "Summary of the inferred relatedness $R_{ROH}=2xF_{ROH}$ on autosomes from the PLINK report (`--homozyg --homozyg-kb`) for variable minimum _ROH_ length (Mb).", digits = 3)
+      
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of the number of runs of homozygosity NROH ($NSEQ$) against the total length of runs SROH ($KB/1000$) in the PLINK report for a subset of the variable minimum $ROH$ lengths $0.1-5$Mb. NROH dominates over SROH with all points above the diagonal, until the minimum length increases to $0.5-0.6$Mb, where the population seems bottlenecked with most points close to or at the diagonal. For minimum lengths above $0.6$Mb, the population seems bottlenecked and consanguineous with most points below and right shifted from the diagonal."}
+
+ggplot(filter(roh_report, Mb %in% c(0.1, 0.2, 0.3, 0.4,
+                                    0.5, 0.6, 0.7, 0.8,
+                                    0.9, 1.0, 1.5, 5)), 
+       aes(x = KB/1000, y = NSEG)) +
+  geom_line(aes(group = Mb, colour = factor(Mb))) +
+  geom_point(aes(group = Mb, colour = factor(Mb)), shape=1) +
+  geom_abline(intercept =0 , slope = 1) +
+  scale_x_continuous(limits = c(0, 1900), breaks = seq(0, 1900, 200)) +
+  scale_y_continuous(limits = c(0, 1900), breaks = seq(0, 1900, 200)) +
+  xlab(expression(paste("SROH (", italic(KB)/1000,")"))) +
+  ylab(expression(paste("NROH (", italic(NSEG),")"))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.85, 0.4)) +
+  labs(color = "Min length (Mb)")
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of the number of runs of homozygosity NROH ($NSEQ$) against the total length of runs SROH ($KB/1000$) in the PLINK report for a subset $0.5-5$Mb of the variable minimum $ROH$ lengths. At $0.6$Mb minimum length the population seems bottlenecked with most points close to or at the diagonal. Above $0.6$Mb the population seems bottlenecked and consanguineous with the points below and right shifted from the diagonal. At $1.5$Mb the points left shift towards the diagonal, and at $5$Mb the leftmost point is back near the diagonal."}
+
+ggplot(filter(roh_report, Mb %in% c(0.5, 0.6, 0.7, 0.8,
+                                    0.9, 1.0, 1.2, 1.5, 5)), 
+       aes(x = KB/1000, y = NSEG)) +
+  geom_line(aes(group = Mb, colour = factor(Mb))) +
+  geom_point(aes(group = Mb, colour = factor(Mb)), shape=1) +
+  geom_abline(intercept =0 , slope = 1) +
+  scale_x_continuous(limits = c(0, 600), breaks = seq(0, 600, 50)) +
+  scale_y_continuous(limits = c(0, 600), breaks = seq(0, 600, 50)) +
+  xlab(expression(paste("SROH (", italic(KB)/1000,")"))) +
+  ylab(expression(paste("NROH (", italic(NSEG),")"))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.15, 0.75)) +
+  labs(color = "Min length (Mb)")
+
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plots of the number of runs of homozygosity NROH ($NSEQ$) against the total length of runs SROH ($KB/1000$) in the PLINK report for the minimum lengths of $ROH>0.3$Mb. At about $1.0$Mb the points are maximum shifted to the right from the diagonal."}
+
+ggplot(filter(roh_report, Mb > 0.3),
+       aes(x = KB/1000, y = NSEG)) +
+  geom_line(color = "gray") +
+  geom_point(aes(colour = factor(Mb)), shape=1, na.rm =TRUE) +
+  geom_abline(intercept =0 , slope = 1) +
+  xlab(expression(paste("SROH (", italic(KB)/1000,")"))) +
+  ylab(expression(paste("NROH (", italic(NSEG),")"))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(color = "Min length (Mb)") +
+  facet_wrap(~ IID)
+
+
+```
+
+```{r}
+
+# Calculate the deviation delta = SROH - NROH at each value of the minimum ROH-lenght (Mb > 0.3)
+deviation <- 
+  filter(roh_report, 
+         Mb > 0.3) %>% 
+  select(IID, NSEG, KB, Mb) %>% 
+  mutate(NROH = NSEG,
+         SROH = KB/1000,
+         delta = SROH - NROH)
+
+# Check output sorted by sample and decreasing delta
+# arrange(deviation, IID, desc(delta))
+
+```
+
+```{r}
+
+# Check where the maximum deviation is for each sample by assigning rank 1 to the largest deviation of each sample
+rank_deviation <- deviation %>% 
+  group_by(IID) %>%
+  # the largest deviation gets rank 1
+  mutate(rank = rank(desc(delta))) %>% 
+  # show only the 3 highest ranks for each sample
+  filter(rank < 4)
+
+# Check output sorted by sample and rank
+# arrange(rank_deviation, IID, rank)
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plots of deviation SROH ($KB/1000$) $-$ NROH ($NSEQ$) from the linear diagonal in the NROH versus SROH plots shown for minimum $ROH$ lengths between $0.4$ and $1.5$Mb. For all the samples the SROH is clearly below the diagonal (deviation $>0$) for minimum $ROH$ lengths above $0.7-0.8$Mb and the maximum deviation is found at $1.0$Mb."}
+
+ggplot(filter(deviation, Mb < 1.6), aes(x = Mb, y = delta)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ IID) +
+  scale_x_continuous(breaks = seq(0.4, 1.6, 0.2)) +
+  xlab(expression(paste("Minimum length (", italic(Mb),")"))) +
+  ylab("Deviation (SROH - NROH)")
+```
+
+
+```{r}
+
+# Set the human generation time from reference [45] in the manuscript.
+gen_time <- 26.9
+
+# Set the estimated average year of birth of the sampled individuals
+origin <- 1960
+
+# Estimate generations and years
+generations <- tibble(
+  # Check back in time for Mb > 0.6 (0.7-24)
+  Mb = seq(0.7, 24, 0.1),
+  # Estimate generations back in time from formula (7) in the manuscript
+  g = 100/(2*Mb),
+  # Estimate years back in time from t = 26.9g
+  years_back = gen_time*g,
+  # Estimate the calender year
+  Year = round(origin - years_back)
+)
+
+# Check output
+# generations
+
+```
+
+
+```{r fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of the estimated years back in time (left y-axis) and generations back in time (right y-axis) inferred from the minimum lengths of $ROH>0.6$Mb. At $1$Mb the estimate is $1345$ years back and $50$ generations back in time."}
+
+
+# Select tic-breaks to correspond between Year and generations   
+years_break <- seq(0, 2000, 100)
+gen <- round(years_break/gen_time, 0)
+
+ggplot(generations) +
+  geom_line(aes(x=Mb, y = years_back)) +
+  scale_x_continuous(breaks = seq(0, 24, 2)) +
+  scale_y_continuous(# Add a second axis and specify its features
+    breaks = years_break,
+    sec.axis = sec_axis(trans=~./gen_time,
+                        name= "Estimated generations back in time",
+                        breaks = gen)) +
+   xlab(expression(paste("Minimum length (", italic(Mb),")"))) +
+   ylab("Estimated years back in time")
+
+
+```
+
+```{r fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of the estimated calender year (left y-axis) and generations back in time (right y-axis) since $1960$ inferred from the minimum lengths of $ROH>0.6$Mb. At $1$Mb the estimated calender year is $615$."}
+
+
+# Select tic-breaks to correspond between Year and generations   
+years_break <- seq(0, origin, 100)
+gen <- round((origin - years_break)/gen_time, 0)
+
+ggplot(generations) +
+  geom_line(aes(x=Mb, y = Year)) +
+  scale_x_continuous(breaks = seq(0, 24, 2)) +
+  scale_y_continuous(# Add a second axis and specify its features
+    breaks = years_break,
+    sec.axis = sec_axis(trans=~(origin-.)/gen_time,
+                        name= "Estimated generations back in time",
+                        breaks = rev(gen))) +
+   xlab(expression(paste("Minimum length (", italic(Mb),")"))) +
+   ylab("Estimated calender year")
+  
+```
+
+```{r}
+
+# Calculate the deviation delta = SROH - NROH and timing at each value of the minimum ROH-lenght (Mb > 0.6)
+deviation_timing <-
+  filter(roh_report,
+         Mb > 0.6) %>%
+  select(IID, NSEG, KB, Mb) %>%
+  mutate(NROH = NSEG,
+         SROH = KB/1000,
+         delta = SROH - NROH,
+         g = 100/(2*Mb),
+         years_back = g*gen_time,
+         Year = round(origin - years_back))
+
+# Chek output
+# deviation_timing
+
+```
+
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plots of deviation SROH ($KB/1000$) $-$ NROH ($NSEQ$) from the linear diagonal in the NROH versus SROH plots shown for minimum $ROH$ lengths between $0.7$ and $1.5$Mb, transformed to the corresponding estimated time in years. The maximum deviation for all samples is found at $1.0$Mb corresponding to year $615$."}
+
+
+ggplot(filter(deviation_timing, Mb < 1.6), aes(x = Year, y = delta)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ IID) +
+  ylab("Deviation (SROH - NROH)") +
+  scale_x_continuous(breaks = seq(0, 1000, 200)) 
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plots of the number of runs of homozygosity NROH ($NSEQ$) against the total length of runs SROH ($KB/1000$) in the PLINK report for the minimum lengths of $ROH>0.3$Mb. At about $1.0$Mb the points are maximum shifted to the right from the diagonal."}
+
+# Assign plot
+NROH_SROH_plot <- 
+  ggplot(filter(roh_report, Mb > 0.3),
+         aes(x = KB/1000, y = NSEG)) +
+  geom_line(aes(group=IID), alpha = 0.25) +
+  geom_point(alpha = 0.25) +
+  geom_abline(intercept =0 , slope = 1) +
+  xlab(expression(paste("SROH (", italic(KB)/1000,")"))) +
+  ylab(expression(paste("NROH (", italic(NSEG),")"))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# Show plot - outcommented since we use the saved plot instead for the main manuscript
+# NROH_SROH_plot
+
+# Save plot 
+ggsave(filename = "fig2_125x125v2.pdf", plot = NROH_SROH_plot,
+       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 600)
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of deviation SROH ($KB/1000$) $-$ NROH ($NSEQ$) from the linear diagonal in the NROH versus SROH plots shown for minimum $ROH$ lengths between $0.4$ and $1.5$Mb. For all the samples the SROH is clearly below the diagonal (deviation $> 0$) for minimum $ROH$ lengths above $0.7-0.8$Mb and the maximum deviation is found at $1.0$Mb."}
+
+# Assign plot
+deviation_Mb_plot <- 
+  ggplot(filter(deviation, Mb < 1.6), aes(x = Mb, y = delta)) +
+  geom_line(aes(group = IID), alpha = 0.25) +
+  geom_point(alpha = 0.25) +
+  scale_x_continuous(breaks = seq(0.4, 1.6, 0.2)) +
+  xlab(expression(paste("Minimum length (", italic(Mb),")"))) +
+  ylab("Deviation") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# Show plot
+deviation_Mb_plot
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of deviation from the linear diagonal in the NROH versus SROH plots shown for minimum $ROH$ lengths between $0.7$ and $1.5$Mb, transformed to the corresponding estimated time in years. The maximum deviation for all samples is found at $1.0$Mb corresponding to year $615$. The three shaded rectangles illustrate the dating of the oldest archaeological findings from the Faroe Islands from two pre-Viking colonization events at year $300-500$ (left) and $500-700$ (right), and the first apperance of sheep DNA at year $500$ (top, CI: $370-610$)."}
+
+# The linetype aesthetic can be specified with either an integer (0-6), a name (0 = blank, 1 = solid, 2 = dashed, 3 = dotted, 4 = dotdash, 5 = longdash, 6 = twodash)
+
+# Assign plot
+deviation_Year_plot <- 
+  ggplot(filter(deviation_timing, Mb < 1.6), aes(x = Year, y = delta)) +
+  # Draw rectangle for Sheep DNA CI
+  geom_rect(aes(xmin = 370, xmax = 610, ymin = -Inf, ymax = Inf),
+            fill = "gray97") +
+  # Draw rectangle for Pre-Viking 1
+  geom_rect(aes(xmin = 300, xmax = 500, ymin = -Inf, ymax = 100),
+            fill = "gray90") +
+  # Draw rectangle for Pre-Viking 2
+  geom_rect(aes(xmin = 500, xmax = 700, ymin = -Inf, ymax = 100),
+            fill = "gray83") +
+  # Draw smoothed lines per sample (group = IID)
+  geom_smooth(aes(x = Year, y = delta, group = IID), size = 0.5,
+              se = FALSE,
+              color = "gray",
+              method ="loess") +
+  # Draw boxplot across samples (group = Year)
+  geom_boxplot(aes(group = Year)) +
+  # Draw line for Sheep-DNA estimate
+  geom_vline(aes(xintercept = 500), linetype = "dashed", color = "darkgray") +
+  # Plot the data points
+  geom_point(alpha = 0.25) +
+  ylab("Bottleneck effect (deviation)") +
+  scale_x_continuous(breaks = seq(0, 1000, 100)) +
+  scale_y_continuous(breaks = seq(0, 200, 50), limits = c(0, 200)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+# Show plot
+deviation_Year_plot
+
+# Save plot 
+ggsave(filename = "fig3_125x125v2.pdf", plot = deviation_Year_plot,
+       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 600)
+
+```
+
+
+
+```{r}
+
+# Optionally calculate and list the run time for the entire code within this document
+# end_time <- now()
+# time_taken <- end_time - start_time
+# time_taken
+# Time difference of 29.35248 secs
+
+```
+

@@ -1,0 +1,571 @@
+---
+title: "Additional file 8 -  Supplementary ancestry analysis"
+author:
+date:
+output:
+  pdf_document: default
+  html_document: default
+---
+\renewcommand{\figurename}{Figure}
+\renewcommand{\thefigure}{S8.\arabic{figure}}
+\renewcommand{\tablename}{Table}
+\renewcommand{\thetable}{S8.\arabic{table}}
+
+
+```{r setup, include=FALSE}
+
+# The following analysis is for the eight merged samples
+# Lines starting with a #-sign are outcommented comments or optional code for testing purposes
+
+# Load libraries
+library(tidyverse)
+library(knitr)
+library(broom)
+library(lubridate)
+
+# Set default echo = FALSE for all code chunks - to only list the results, not the code
+knitr::opts_chunk$set(echo = FALSE)
+
+# Set the default working directory for all code chunks
+knitr::opts_knit$set(root.dir = '/yourdata/autosomes')
+
+# Optional timer - to check the run time of the entire code within this document
+# start_time <- now()
+
+# Set theme used for plotting
+theme_hg <- theme_bw 
+theme_set(theme_hg(base_size = 12))
+
+```
+
+
+```{r}
+
+# Source a file with own summary functions into local environment - to minimize repetition of code
+source("summary_functions.R", local = TRUE)
+
+```
+
+
+```{r}
+
+# Set filter text for a fixed filter - the advanced filter - outcomment if using a variable filter (next chunk)
+filter_text <- "FILTER='PASS' & QUAL>30 & FMT/DPU>10"
+
+# Set merged_vcf file name for a fixed filter - the advanced filter - outcomment if using a variable filter (next chunk)
+merged_vcf <- "pass.minQ30.minDPU10.snps.mergedsample.auto.vcf.gz"
+
+```
+
+
+```{r}
+
+# Optional - set filter text for a variable filter for testing (the last used when generating filtered vcf-files)
+# filter_text <- read_lines("filter_text.txt")
+
+# Optional - set merged_vcf file name for a variable filter for testing (the last used when generating filtered vcf-files)
+# merged_vcf <- read_lines("merged_vcf.txt")
+
+```
+
+
+```{r}
+
+# Create a table for the filter-text
+filter_table <- tibble(
+  `Autosome files` = "SNP VCFs",
+  `Filter-text` = filter_text
+)
+
+
+# Output the filter-text table
+kable(filter_table,
+       caption = "Filter (`bcftools filter -i`) used to filter the SNP files before further processing with KING." )
+
+```
+
+
+```{r}
+
+# Parameter holding the merged sample filename with unique ID's and filtered (f1m) for use with KING
+plink_file <- paste(str_sub(merged_vcf, 1, -8), ".uid.f1m.bed", sep="")
+
+# Prefix for KING output
+mds_prefix <- paste(str_sub(merged_vcf, 1, -8), ".uid.f1m.mds", sep="")
+
+# Output file
+mds_output <- paste(mds_prefix, "_InferredAncestry.txt", sep="")
+
+# The filename of the mds projection reference data
+popref_file <- paste(mds_prefix,"_popref.txt", sep="")
+
+# The filename of the mds projection pc data
+mdspc_file <- paste(mds_prefix,"pc.txt", sep="")
+
+# Check output
+# plink_file
+# mds_prefix
+# mds_output
+# popref_file
+# mdspc_file
+```
+
+
+```{r}
+## MDS of SNPs projected to the 1000GP PC-space
+# perform king mds projection
+# king -b KGref.bed,ex.bed --mds --projection --rplot
+
+# Previous command using system - replaced by the system2 command in next chunks
+# system(paste("/yourpath/king -b KGref.bed,snpsQ30.mergedsample.auto.uid.f1m.bed --mds --projection --rplot --prefix ",mds_id, sep=""))
+```
+
+
+```{r}
+
+## MDS of SNPs projected to the 1000GP PC-space
+# perform king mds projection
+# king -b KGref.bed,ex.bed --mds --projection --rplot
+
+# Construct the KING command text
+king_cmd <- c("/yourpath/king",
+              "-b",
+              paste("KGref.bed,",plink_file, sep=""),
+              "--mds",
+              "--projection",
+              "--rplot" ,
+              "--prefix",
+              mds_prefix)
+
+```
+
+
+```{r}
+
+# Use system2 to run the command and capture the output
+system2_stdout <- system2(command = king_cmd, stdout = TRUE, stderr = TRUE)
+
+# Check output
+# system2_stdout
+
+```
+
+
+```{r}
+
+# Read the MDS-inferred ancestry file 
+ancestry <- read_tsv(mds_output, col_types = cols())
+
+# Check output
+# ancestry
+
+```
+
+
+```{r}
+
+# Construct summary of primary ancestry
+pr_anc <- SummariseAncestry(object_name = ancestry, variable = "Pr_Anc")
+
+# construct summary of secondary ancestry
+pr_2anc <- SummariseAncestry(object_name = ancestry, variable = "Pr_2nd")
+
+
+# Combine the two summaries into one table
+ancestry_summary <- rbind(pr_anc, pr_2anc)
+
+# Check output
+# ancestry_summary
+
+```
+
+
+```{r}
+
+# Construct Table caption
+ancestry_text1 <- "Summary of the KING (`--mds --projection`) inferred ancestry using"
+ancestry_text2 <- str_extract(system2_stdout[35], "[0-9]+")
+ancestry_text3 <- 
+  "autosome SNPs of the eight samples from the Faroe Islands projected together with a 1000GP reference (KGref.bed, 2451 samples)."
+
+# The Table caption
+ancestry_caption <- paste(ancestry_text1,
+                          ancestry_text2,
+                          ancestry_text3)
+# Check output
+# ancestry_caption
+
+```
+
+
+```{r}
+
+# Output the table
+kable(ancestry_summary,
+      caption = ancestry_caption, digits = 4)
+
+```
+
+
+```{r}
+
+# Read in results from mds projection, first the reference data
+popref_data <- read.table(file = popref_file, header=T)
+popref_data <- as_tibble(popref_data)
+
+# Check output
+# popref_data
+```
+
+
+```{r}
+
+# Read in results from mds projection, now the mdspc data
+mdspc_data <- read.table(file = mdspc_file, header=T)
+mdspc_data <- as_tibble(mdspc_data)
+
+# Check output
+# mdspc_data
+```
+
+
+```{r}
+
+# popref_data from the mds-projection only includes FID IID Population
+
+# Broad Institute reference panel including both country names (pop) and regions (super_pop)
+# downloaded with wget from
+# https://personal.broadinstitute.org/armartin/ginger/integrated_call_samples_v3.20130502.ALL.panel.txt
+
+# Read in the reference panel
+broadref_panel <- 
+  read.table(file="integrated_call_samples_v3.20130502.ALL.panel.txt", header=T)
+
+broadref_panel <- as_tibble(broadref_panel)
+
+# Check output
+# broadref_panel
+
+```
+
+
+```{r}
+
+# reference data 
+# popref_data
+# 2,451 rows
+
+# the reference panel with country names integrated_call_samples_v3.20130502.ALL.panel.txt
+# broadref_panel
+# 2,504 rows, has more samples than our reference data
+
+```
+
+
+```{r}
+
+# KGrefID (2451 rows) from the King-reference KGref.bed projection output popref_data (no country names)
+KGrefID <- popref_data$IID
+
+# Check output
+# KGrefID
+
+```
+
+
+```{r}
+
+# Filter broadref_panel to only include those 2451 reference panel samples with corresponding ID in KGrefID
+panel_samples <- filter(broadref_panel, sample %in% KGrefID)
+
+# Drop unused factor levels for the above filter
+panel_samples$sample <- droplevels(panel_samples$sample)
+
+```
+
+
+```{r}
+
+# Create copy object to rename columns
+panel_reference <- panel_samples
+
+# colnames(panel_reference)
+# "sample"    "pop"       "super_pop" "gender"
+
+# Rename the columns
+colnames(panel_reference) <- c("IID", "Ancestry", "Population", "Gender")
+
+# Check output
+# panel_reference
+
+```
+
+
+```{r}
+
+# Add "Ancestry", "Gender" to popref_data by left_join with panel_reference:
+pop_ref <- left_join(popref_data, panel_reference, by = c("IID", "Population"))
+
+# Check output
+# pop_ref
+
+```
+
+
+```{r}
+
+# mdspc data from mds projection have no columns "Population", "Ancestry", "Gender" 
+# mdspc_data
+# 2,459 rows = 2,451 reference samples + 8 study samples
+
+# First, we filter the mdspc_data to only include the 2451 reference samples 
+# by excluding (!IID) the eight Faroese samples listed in the inferred ancestry table
+# filter(mdspc_data,!IID %in% ancestry$IID) or mdspc_data[-(2452:2459),]
+mdspc_ref <- filter(mdspc_data, !IID %in% ancestry$IID)
+
+# Drop unused factor levels for the above filter
+mdspc_ref$FID <- droplevels(mdspc_ref$FID)
+mdspc_ref$IID <- droplevels(mdspc_ref$IID)
+
+# Check output
+# mdspc_ref
+
+```
+
+
+```{r}
+
+# Then, we left_join the mdspc_ref to pop_ref to get columns "Population", "Ancestry", "Gender" 
+# We also add "Region" as copy of "Population" for plotting purposes, when we later rbind with table including Faroese samples
+pop_mdspc_ref <- left_join(pop_ref, mdspc_ref, by = c("FID", "IID")) %>%
+  mutate(., Region = Population) %>%
+  select(., FID, IID, Population, Ancestry, Region,
+         Gender, 
+         everything())
+
+# Set Region to be a factor variable
+pop_mdspc_ref <- mutate(pop_mdspc_ref,
+                        Region = as_factor(Region))
+
+# Exclude not used columns
+pop_mdspc_ref <- select(pop_mdspc_ref, -Gender, -FA, -MO,-SEX, -AFF)
+
+# Check output
+# pop_mdspc_ref
+```
+
+
+```{r}
+
+# Now, we filter the mdspc_data to only include the eight Faroese samples 
+# including (IID) the eight Faroese samples listed in the ancestry table
+# filter(mdspc_data,IID %in% ancestry$IID) or mdspc_data[(2452:2459),]
+mdspc_fo <- filter(mdspc_data, IID %in% ancestry$IID) %>% 
+  mutate(FID = as.character(FID),
+         IID = as.character(FID))
+
+# Check output
+# mdspc_fo
+
+```
+
+
+```{r}
+
+# To assign ancestry to the mdspc_fo data, we have to join mdspc_fo with ancestry and add column Population as Anc_1st
+# We also mutate the Ancestry column to correspond to Country as in the pop_mdspc_ref table with the reference data
+# Finally, we add Region for plotting purposes and selct only those columns that also are present in the pop_mdspc_ref table
+pop_mdspc_fo <- left_join(mdspc_fo, ancestry, by = c("FID", "IID", "PC1", "PC2")) %>% 
+  mutate(
+    # Ancestry was assigned in prefix_InferredAncestry.txt and imported to ancestry table
+    # Population (in pop_ref) corresponds to Ancestry or Anc_1st in ancestry table
+    Population = Anc_1st,
+    # Ancestry (in pop_ref) corresponds to Country. We assign "FO" to Ancestry as a factor in this table.
+    Ancestry = factor("FO"),
+    # Also, we assign "F0" to "Region" for plotting purposes (to show FO distinct from EUR in legend)
+    Region = factor("FO")
+  ) %>% 
+  select(., FID, IID, Population, Ancestry, Region, everything(), 
+         -FA, -MO,-SEX, -AFF,
+         -Pr_Anc, -Anc_1st, -Anc_2nd, -Pr_1st, -Pr_2nd)
+
+# Check output
+# pop_mdspc_fo
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+# rbind the mdspc data for the reference samples and for the Faroese samples
+pop_mdspc <- rbind(pop_mdspc_ref, pop_mdspc_fo)
+
+# Check output
+# pop_mdspc
+```
+
+
+```{r}
+
+# Create a summary table for the mdspc components for the Faroese samples
+
+# First, we select subset of the table columns
+mdspc_faroes <- select(pop_mdspc_fo, IID, PC1:PC20)
+
+
+# Then, we gather the 20 PC-columns PC1:PC20 into one PC-column for table-printing purposes
+mdspc_faroes <- gather(mdspc_faroes, "PC", "Values", -IID)
+
+# Check output
+# mdspc_faroes
+
+```
+
+
+```{r}
+
+# Create the summary of the mdspc PC-components
+mdspc_faroes_summary <- 
+  mdspc_faroes %>% 
+  group_by("PC" = as_factor(PC)) %>% 
+  summarise(
+    "values" = length(Values),
+    "min" = min(Values),
+    "q1" = quantile(Values, 0.25),
+    "med" = median(Values),
+    "mean" = mean(Values),
+    "q3" = quantile(Values, 0.75),
+    "max" = max(Values),
+    iqr = IQR(Values),
+    sd = sd(Values)
+  )
+
+# Check output
+# mdspc_faroes_summary
+
+```
+
+
+```{r}
+
+# Create a dynamic Table caption
+
+mds_text1 <- 
+  "Summary of the KING (`--mds --projection`) 20 MDS PCs for the eight samples from the Faroe Islands. "
+
+mds_text2 <- 
+  paste(str_sub(system2_stdout[54], 1, 36),
+        str_sub(system2_stdout[54], -24, -1),
+        system2_stdout[55],
+        str_sub(system2_stdout[56], 4, -1))
+
+mds_caption <- paste(mds_text1,
+                     mds_text2, ".", sep="")
+
+# output the table
+# kable(mdspc_faroes_summary,
+#       caption = "Summary of the KING (`--mds --projection`) 20 MDS PCs for the eight samples from the Faroe Islands. The first 20 PCs are able to explain 19.3% of total variance. The proportion of total variance explained (%) by each PC is:
+#    11.3 4.4 1.1 0.8 0.2 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1.", digits = 4)
+
+# Output the table with the dynamic caption
+kable(mdspc_faroes_summary,
+      caption = mds_caption, digits = 4)
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "The multidimensional scaling (MDS) principal components (PC) of the samples from the Faroe Islands projected to the PC space of the 1000GP. The samples from FO (Faroe Islands, 8 samples) were projected together with a 1000GP reference (KGref.bed, 2451 samples): African (AFR, 637 samples), Admixed American (AMR, 336), East Asian (EAS, 498), European (EUR, 500) and South Asian (SAS, 480)."}
+
+# Create the mdspc plot of the samples from the Faroe Islands projected to the PC space of the 1000GP
+ggplot(pop_mdspc, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = Region), alpha = 1) +
+  scale_colour_manual(values = c("red","chocolate", "green", "blue", "purple", "black")) +
+  scale_x_continuous(limits=c(-0.03, 0.04), breaks = seq(-0.04, 0.08, 0.01)) +
+  scale_y_continuous(limits=c(-0.03, 0.04), breaks = seq(-0.04, 0.08, 0.01)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  xlab("MDS-PC1")+
+  ylab("MDS-PC2")
+
+# Save plot if needed
+# 2-column width
+# ggsave(filename = "pop_mdspc_180x160.pdf",
+#        device = "pdf", width = 18.0, height = 16.0, units = "cm", dpi = 600)
+# 
+# ggsave(filename = "pop_mdspc_180x160.jpeg",
+#        device = "jpeg", width = 18.0, height = 16.0, units = "cm", dpi = 300)
+
+
+```
+
+
+```{r}
+
+# Filter to only include the Europeans
+pop_mdspc_eur <- filter(pop_mdspc, Population == "EUR")
+
+# Check output
+# pop_mdspc_eur
+
+```
+
+
+```{r}
+
+# pop_mdspc_eur %>%
+#   group_by(., Ancestry) %>%
+#   summarise(
+#   n = n()
+# )
+
+# 
+# CEU	98			
+# FIN	99			
+# GBR	89			
+# IBS	107			
+# TSI	107			
+# FO	8	
+
+# descriptions of populations: hoover over population on link
+# https://www.ensembl.org/Homo_sapiens/Variation/Population?db=core;r=1:230709548-230710548;v=rs699;vdb=variation;vf=94
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "The multidimensional scaling (MDS) principal components (PC) of the samples from the Faroe Islands projected to the PC space of samples with European ancestry from the 1000GP. The FO (Faroe Islands, 8 samples) were projected together with populations of European ancestry: CEU (Utah residents with Northen and Western European ancestry, 98 samples), FIN (Finish in Finland, 99 samples), GBR (British in England and Scotland, 89 samples), IBS (Iberian population in Spain, 107 samples), TSI (Toscani in Italy, 107 samples)."}
+
+# Create the mdspc plot of the samples from the Faroe Islands projected to the PC space of samples with European ancestry from the 1000GP
+ggplot(pop_mdspc_eur,
+       aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = Ancestry), alpha = 1) +
+  scale_colour_manual(values = c("red","chocolate", "green", "blue",
+                                 "purple",
+                                 "black")) +
+  scale_x_continuous(limits=c(-0.0175, -0.0075), breaks = seq(-0.0175, -0.0075, 0.0025)) +
+  scale_y_continuous(limits=c(-0.03, -0.02), breaks = seq(-0.03, -0.02, 0.0025)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  xlab("MDS-PC1")+
+  ylab("MDS-PC2")
+
+
+# Save plot if needed
+# 2-column width
+# ggsave(filename = "pop_mdspc_eur_180x160.pdf",
+#        device = "pdf", width = 18.0, height = 16.0, units = "cm", dpi = 600)
+# 
+# ggsave(filename = "pop_mdspc_eur_180x160.jpeg",
+#        device = "jpeg", width = 18.0, height = 16.0, units = "cm", dpi = 300)
+
+```
+
+
+```{r}
+
+# Optionally calculate and list the run time for the entire code within this document
+# end_time <- now()
+# time_taken <- end_time - start_time
+# time_taken
+
+# Time difference of 1.53115 mins
+
+```
+

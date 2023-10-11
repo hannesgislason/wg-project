@@ -1,0 +1,416 @@
+---
+title: "bcftools sort, concat and filter to only include autosome SNPs - but no quality filtering here"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Bash scripts using bcftools
+
+```{bash}
+
+# bcftools version
+# /yourpath/bcftools --version
+
+```
+
+## List the sample locations and the sample names
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+# list sample locations and sample names 
+for directory in $(find /yourdata/*/variants/output -type d)
+do
+    echo $directory
+    # the cut command with delimiter / selects field 3 which is the sample name (*)
+    sample=$( echo $directory |cut -d'/' -f 3)
+    echo $sample
+done
+
+```
+
+## Copy and gunzip all the chromosome variant files per sample to a output directory per sample
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+start=`date +%s`
+
+# cp and gunzip files for the 8 samples
+for directory in $(find /yourdata/*/variants/output -type d)
+do
+    #echo $directory
+    
+    # the cut command with delimiter / selects field 3 which is the sample name
+    sample=$( echo $directory |cut -d'/' -f 3)
+    echo $sample
+    
+    # step into output directory
+    cd "$directory" 
+    pwd
+    
+    # step back to variant directory
+    cd ..
+    pwd
+    
+    # copy all annotated variant files to the output directory
+    cp *.variants.annotated.vcf.gz "$directory"
+    
+    echo "cp *.variants.annotated.vcf.gz done!"
+    
+    # step into output directory
+    cd "$directory"
+    pwd
+    
+    # unpack all annotated variant files in output directory
+    gunzip *.variants.annotated.vcf.gz
+    
+    echo "gunzip *.variants.annotated.vcf.gz done!"
+    
+done
+
+end=`date +%s`
+
+runtime=$((end-start))
+echo $runtime
+
+# runtime on 09.09.2023 was about 63 seconds or 1 min.
+
+```
+
+## bgzip all the chromosome variant files per sample in the output directory per sample
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+start=`date +%s`
+
+# bgzip files for the 8 samples
+for directory in $(find /yourdata/*/variants/output -type d)
+do
+    # the cut command with delimiter / selects field 3 which is the sample name
+    sample=$( echo $directory |cut -d'/' -f 3)
+    echo $sample
+    
+    # step into output directory
+    cd "$directory" 
+    pwd
+    
+    # block pack them all with bgzip
+    # for i in *.variants.annotated.vcf; do echo $i; done
+    for i in *.variants.annotated.vcf; do /yourpath/bgzip $i; done
+    
+    # index the files
+    for i in *.variants.annotated.vcf.gz; do /yourpath/tabix -p vcf $i; done
+    
+    echo "/yourpath/bgzip *.variants.annotated.vcf done!"
+done
+
+end=`date +%s`
+
+runtime=$((end-start))
+echo $runtime
+
+# runtime on 09.09.2023 was about 227 seconds or 3.8 min.
+
+```
+
+
+## bcftools sort all the chromosome variant files per sample in the output directory per sample and re-name them
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+start=`date +%s`
+
+# sort files for the 8 samples
+for directory in $(find /yourdata/*/variants/output -type d)
+do
+    # the cut command with delimiter / selects field 3 which is the sample name (*)
+    sample=$( echo $directory |cut -d'/' -f 3)
+    echo $sample
+    
+    # step into output directory
+    cd "$directory" 
+    pwd
+    
+    # the cut command with delimiter . selects fields 1, 4 and 5 out of the 5 fields in *.variants.annotated.vcf.gz:
+    # for i in *.variants.annotated.vcf.gz; do echo $i; echo $i |cut -d'.' -f 1,4,5; done
+   
+    # sort the *.variants.annotated.vcf.gz files and re-name the output files with the shorter file names
+    for i in *.variants.annotated.vcf.gz; do /yourpath/bcftools sort -Oz $i > $( echo $i |cut -d'.' -f 1,4,5); done
+    
+    echo "/yourpath/bcftools sort -Oz done!"
+    
+    # list the shorter filenames (therefore the use of cut)
+    # for i in *.variants.annotated.vcf.gz; do echo $i |cut -d'.' -f 1,4,5; done
+    
+    # index the files with the shorter file names (tabix -f for overwrite if exists)
+    # for i in *.variants.annotated.vcf.gz; do /yourpath/tabix -p vcf $( echo $i |cut -d'.' -f 1,4,5); done
+    for i in *.variants.annotated.vcf.gz; do /yourpath/tabix -f -p vcf $( echo $i |cut -d'.' -f 1,4,5); done
+   
+    echo "/yourpath/tabix -f -p vcf done!"
+done
+
+end=`date +%s`
+
+runtime=$((end-start))
+echo $runtime
+
+# runtime on 09.09.2023 was about 404 seconds or 6.7 min.
+
+```
+
+
+## bcftools concat the sorted autosome (chr1-22) variant files (with shorter filenames) in the output directory per sample
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+start=`date +%s`
+
+# Variables containing chromosome file names
+CHR_1_6="chr1.vcf.gz chr2.vcf.gz chr3.vcf.gz chr4.vcf.gz chr5.vcf.gz chr6.vcf.gz"
+CHR_7_12=" chr7.vcf.gz chr8.vcf.gz chr9.vcf.gz chr10.vcf.gz chr11.vcf.gz chr12.vcf.gz"
+CHR_13_18=" chr13.vcf.gz chr14.vcf.gz chr15.vcf.gz chr16.vcf.gz chr17.vcf.gz chr18.vcf.gz"
+CHR_19_22=" chr19.vcf.gz chr20.vcf.gz chr21.vcf.gz chr22.vcf.gz"
+
+# Autosome file names
+CHR_1_22=$CHR_1_6$CHR_7_12$CHR_13_18$CHR_19_22
+
+# Variable containing file extension for the concatenated autosome
+filetypeauto=".auto.vcf.gz"
+
+COUNTER=0
+
+# concatenate autosomes - run for all 8 samples
+for directory in $(find /yourdata/*/variants/output -type d)
+do
+    # step into output directory
+    cd "$directory" 
+    pwd
+    
+    let COUNTER=COUNTER+1
+    
+    # new samples names labeled with a sample number from $COUNTER
+    sample="SAMPLE"$COUNTER
+    
+    # list the chromosomes to be concatenated
+    # echo $CHR_1_22
+    
+    # list the sample name of the concatenated autosome file
+    echo $sample$filetypeauto
+    
+    # concatenate the autosomal chromosomes into one sample file SAMPLE*.auto.vcf.gz
+    /yourpath/bcftools concat -Oz $CHR_1_22 > $sample$filetypeauto
+    
+    echo "/yourpath/bcftools concat -Oz done for autosome!"
+    
+    # tabix the concatenated sample
+    /yourpath/tabix -p vcf $sample$filetypeauto
+    
+    echo "/yourpath/tabix -p vcf done!"
+    
+done
+
+end=`date +%s`
+
+runtime=$((end-start))
+echo $runtime
+
+# runtime on 09.09.2023 was about 246 seconds or 4.1 min.
+
+```
+
+## Copy concatenated sample files to a common output directory thus containing all the samples
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+dest_directory="/yourdata/autosomes"
+
+# list concatenated sample directories and copy the concatenated files to a common directory
+for directory in $(find /yourdata/*/variants/output -type d)
+do
+    # step into output directory
+    cd "$directory" 
+    pwd
+    
+    echo $dest_directory
+    # copy all concatenated variant files to the dest_directory
+    cp SAMPLE*.auto.vcf.gz "$dest_directory"
+    
+    # copy the corresponding index files
+    cp SAMPLE*.auto.vcf.gz.tbi "$dest_directory"
+    
+done
+
+```
+
+## List the concatenated autosome samples in the common directory
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+directory="/yourdata/autosomes"
+cd $directory
+# pwd
+
+# list the concatenated autosome samples
+for vcf in $(find SAMPLE*.auto.vcf.gz -type f)
+do
+  echo $vcf
+done
+
+```
+
+## bcftools filter the concatenated autosome samples to only include SNPs
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+start=`date +%s`
+
+directory="/yourdata/autosomes"
+cd $directory
+pwd
+
+name="snps."
+
+# filter to only include snps, but no quality filtering here
+for vcf in $(find SAMPLE*.auto.vcf.gz -type f)
+ do
+  #echo $vcf
+  echo $name$vcf
+  /yourpath/bcftools filter -i "TYPE='snp'" -Oz $vcf > $name$vcf
+ done
+
+# index the autosome snp-files
+for i in snps.SAMPLE*.auto.vcf.gz; do /yourpath/tabix -p vcf $i; done
+
+end=`date +%s`
+
+runtime=$((end-start))
+echo $runtime
+
+# runtime on 09.09.2023 was about 306 seconds or 5.1 min.
+
+```
+
+## bcftools reheader the concatenated autosome snp-files to rename and rehead the files 
+
+```{bash}
+
+# Rename samples before merging - both externally and internally in the files, so they do not all have same sample ID ("SAMPLE")
+
+# https://bioinformatics.stackexchange.com/questions/16096/renaming-samples-in-vcf-file
+# bcftools reheader -s samples.txt -o new.bcf old.bcf
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+start=`date +%s`
+
+directory="/yourdata/autosomes"
+cd $directory
+pwd
+
+# Variables
+cmd_part1="/yourpath/bcftools reheader --s sample"
+textfile_ext=".txt"
+
+cmd_part2=" --o snps.sample"
+vcffile_ext=".auto.vcf.gz"
+
+space=" "
+
+COUNTER=0
+for vcf in $(find snps.SAMPLE*.auto.vcf.gz -type f)
+do
+    # echo $vcf
+    let COUNTER=COUNTER+1
+    # echo $COUNTER
+    
+    # construct the reheader command text
+    reheader_cmd=$cmd_part1$COUNTER$textfile_ext$cmd_part2$COUNTER$vcffile_ext$space$vcf
+    echo $reheader_cmd
+    
+    # rehead and rename the files from snps.SAMPLE*.auto.vcf.gz to snps.sample*.auto.vcf.gz
+    # in the vcf-header, the sample IDs are set to SAMPLE1, ..., SAMPLE8 from the text files sample1.txt,..., sample8.txt
+    $reheader_cmd
+done
+
+# index the reheaded and renamed files
+for i in snps.sample*.auto.vcf.gz; do /yourpath/tabix -p vcf $i; done
+
+end=`date +%s`
+
+runtime=$((end-start))
+echo $runtime
+
+# runtime on 09.09.2023 was about 42 seconds.
+
+```
+
+## Check the header of the renamed and reheaded samples
+
+```{bash}
+
+#!/bin/sh
+set -e
+set -u
+set -o pipefail
+
+directory="/yourdata/autosomes"
+cd $directory
+# pwd
+
+out_type=".header.txt"
+
+# check the header of the renamed and reheaded samples
+for vcf in $(find snps.sample*.auto.vcf.gz -type f)
+do
+  # create filenames for output
+  out=$(echo $vcf |cut -d'.' -f 1,2)$out_type
+  echo $out
+  /yourpath/bcftools view -h $vcf > $out
+done
+
+```

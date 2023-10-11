@@ -1,0 +1,234 @@
+---
+title: "Additional file 3 -  Supplementary table and plot of the minor allele frequency distribution"
+author:
+date:
+output:
+  pdf_document: default
+---
+\renewcommand{\figurename}{Figure}
+\renewcommand{\thefigure}{S3.\arabic{figure}}
+\renewcommand{\tablename}{Table}
+\renewcommand{\thetable}{S3.\arabic{table}}
+
+
+```{r setup, include=FALSE}
+
+# The following analysis is for the eight merged samples
+# Lines starting with a #-sign are outcommented comments or optional code for testing purposes
+
+# Load libraries
+library(tidyverse)
+library(knitr)
+#library(scales)
+library(lubridate)
+
+# Set default echo = FALSE for all code chunks - to only list the results, not the code
+knitr::opts_chunk$set(echo = FALSE)
+
+# Set the default working directory for all code chunks
+knitr::opts_knit$set(root.dir = '/yourdata/autosomes')
+
+# Optional timer - to check the run time of the entire code within this document
+# start_time <- now()
+
+# Set theme used for plotting
+theme_hg <- theme_bw 
+theme_set(theme_hg(base_size = 12))
+```
+
+
+```{r}
+
+# Set filter text for a fixed filter - the basic filter - outcomment if using a variable filter (next chunk)
+filter_text <- "QUAL>30"
+
+# Set merged_vcf file name for a fixed filter - the basic filter - outcomment if using a variable filter (next chunk)
+merged_vcf <- "minQ30.snps.mergedsample.auto.vcf.gz"
+
+```
+
+```{r}
+
+# Optional - set filter text for a variable filter for testing (the last used when generating filtered vcf-files)
+# filter_text <- read_lines("filter_text.txt")
+
+# Optional - set merged_vcf file name for a variable filter for testing (the last used when generating filtered vcf-files)
+# merged_vcf <- read_lines("merged_vcf.txt")
+
+```
+
+
+```{r}
+
+# Create a table for the filter-text
+filter_table <- tibble(
+  `Autosome files` = "SNP VCFs",
+  `Filter-text` = filter_text
+)
+
+
+# Output the filter-text table
+kable(filter_table,
+       caption = "Filter (`bcftools filter -i`) used to filter the SNP files before further processing with PLINK." )
+
+```
+
+```{r}
+
+# Parameter holding the merged sample filename with unique ID's and filtered (f1m) for use with PLINK
+plink_file <- paste(str_sub(merged_vcf, 1, -8), ".uid.f1m", sep="")
+
+# Output prefix
+allele_freqs <- paste(plink_file,".afreq", sep="")
+
+# Output filename
+maf_output <- paste(allele_freqs, ".frq", sep="")
+
+# Check output
+# plink_file
+# allele_freqs
+# maf_output
+
+```
+
+```{r}
+# Previous command using system to get maf for every SNP - replaced by the system2 command in next chunks
+# system(paste("/yourpath/plink --bfile",plink_file,"--freq --out",allele_freqs))
+```
+
+
+```{r}
+
+# Construct the PLINK command text
+plink_cmd <- c("/yourpath/plink",
+              "--bfile",
+              plink_file,
+              "--freq",
+              "--out",
+              allele_freqs)
+
+```
+
+
+```{r}
+
+# Use system2 to run the command and capture the output
+system2_stdout <- system2(command = plink_cmd, stdout = TRUE, stderr = TRUE)
+
+# Check output
+# system2_stdout
+
+```
+
+
+```{r}
+
+# Read in the maf frequency table
+a_freq <- read_table(maf_output, 
+                     col_types = cols())
+
+# Check output
+# a_freq
+
+```
+
+```{r}
+
+# Count the total number of SNPs  
+snps_total <- 
+  a_freq %>% 
+  summarise(
+    count = n()
+  ) 
+
+# Parameter used to hold the total number of SNPs - for use in Figure and Table captions
+snps_used <- snps_total$count
+
+# Check output
+# snps_used
+
+```
+
+
+```{r}
+
+# Summarise the number, proportion of SNPs at each maf frequency and store the result in maf_table
+maf_table <- 
+  a_freq %>% 
+  group_by(maf = MAF) %>% 
+  summarise(
+    count = n()
+  ) %>% mutate(proportion = count/sum(count))
+
+# Check output
+# maf_table
+
+```
+
+```{r}
+
+# Generate a dynamic figure caption that will include the number of SNPs from the snps_used parameter
+
+figure_caption <- paste("The $maf$-distribution of",snps_used,"SNPs for the eight merged samples from the Faroe Islands made with PLINK and summarised with counts and proportions for each minor allele frequency. The proportions are on the y-scale and the counts above the bars.")
+
+# Check output
+# figure_caption
+
+```
+
+
+
+```{r fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = figure_caption}
+
+# Plot the maf distribution and use the dynamic figure_caption in fig.cap = figure_caption (above)
+ggplot(maf_table) +
+  geom_bar(aes(x = maf, y = proportion), stat = "identity", width=0.005) +
+  geom_text(aes(x = maf, y = proportion, label = count), vjust=-0.5, size = 3.25) +
+  scale_x_continuous(breaks = seq(0,8, 1)/16) +
+  scale_y_continuous(breaks = seq(0, 0.36, 0.02)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  # xlab("Minor allele frequency") +
+  xlab(expression(italic(maf))) +
+  ylab("Proportion")
+
+# Save the plot if needed as a pdf-file
+# 2-column width
+# ggsave(filename = "maf_180x160.pdf",
+#        device = "pdf", width = 18.0, height = 16.0, units = "cm", dpi = 600)
+
+# Save the plot if needed as a jpeg-file
+# 2-column width
+# ggsave(filename = "maf_180x160.jpeg",
+#        device = "jpeg", width = 18.0, height = 16.0, units = "cm", dpi = 300)
+
+```
+
+
+```{r}
+
+# Generate a dynamic table caption that will include the number of SNPs from the snps_used parameter
+
+table_caption <- paste("The $maf$-distribution of",snps_used,"SNPs for the eight merged samples from the Faroe Islands made with PLINK (`plink --freq`), and summarised with counts and proportions for each minor allele frequency. With eight samples and 16 alleles at each SNP position there are nine possible minor allele frequencies: $(0-8)/16 = 0.0000, 0.0625, 0.1250, 0.1875, 0.2500, 0.3125, 0.3750, 0.4375, 0.5000$.")
+
+# Check output
+# table_caption
+
+```
+
+```{r}
+
+# Output the table with the dynamic table caption
+kable(maf_table, 
+      caption = table_caption, digits = 4)
+
+```
+
+```{r}
+
+# Optionally calculate and list the run time for the entire code within this document
+# end_time <- now()
+# time_taken <- end_time - start_time
+# time_taken
+# Time difference of 5.047764 secs
+
+```
