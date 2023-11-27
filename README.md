@@ -1,5 +1,4 @@
-# wg-project
-# code files for paper: 
+# wg-project - code files for paper: 
 # Gislason, H. SNP heterozygosity, relatedness and inbreeding of whole genomes from the isolated population of the Faroe Islands. BMC Genomics 24, 707 (2023). 
 # https://doi.org/10.1186/s12864-023-09763-x
 
