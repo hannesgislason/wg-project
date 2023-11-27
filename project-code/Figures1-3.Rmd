@@ -1,0 +1,216 @@
+---
+title: "Manuscript figures: Fig. 1, Fig. 2 and Fig. 3 (with legends in the manuscript)"
+author:
+date:
+output:
+  pdf_document: default
+  html_document: default
+---
+\renewcommand{\figurename}{Fig.}
+\renewcommand{\thefigure}{\arabic{figure}}
+\renewcommand{\tablename}{Table}
+\renewcommand{\thetable}{\arabic{table}}
+
+```{r setup, include=FALSE}
+
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(patchwork)
+library(knitr)
+
+# Set default echo = FALSE for all code chunks - to only list the results, not the code
+knitr::opts_chunk$set(echo = FALSE)
+
+# Do not show any warnings and messages
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+
+# Set the default working directory for all code chunks
+knitr::opts_knit$set(root.dir = '/yourdata/autosomes')
+
+# Set theme used for plotting
+theme_hg <- theme_bw 
+theme_set(theme_hg(base_size = 12))
+
+
+```
+
+
+```{r}
+
+# Set filter text for a fixed filter - the basic filter 
+filter_text <- "QUAL>30"
+
+# Set file name of ROH report saved to disk from Addfile2 using the merged_vcf (minQ30.snps.mergedsample.auto.vcf.gz) with the basic filter
+rohreport_name <- "rohreportAddfile2.csv"
+
+```
+
+
+```{r}
+
+# Create a table for the filter-text
+filter_table <- tibble(
+  `Autosome files` = "SNP VCFs",
+  `Filter-text` = filter_text
+)
+
+
+# Output the filter-text table
+# kable(filter_table,
+#        caption = "Filter (`bcftools filter -i`) used to filter the SNP files before further processing with PLINK" )
+
+```
+
+
+```{r}
+
+# Read in the ROH data previously generated
+rohreport <- read_csv(rohreport_name,
+                           show_col_types = FALSE)
+
+# Check output
+# rohreport
+
+```
+
+```{r}
+
+# Generate the plot of ROH KB/1000
+p_roh <- 
+  ggplot(rohreport, aes(x=Mb, y = KB/1000)) +
+  geom_hline(aes(yintercept = 0.007*2881.033286, linetype = "0.007", colour = "0.007")) +
+  geom_hline(aes(yintercept = 0.258*2881.033286, linetype = "0.258", colour = "0.258")) +
+  geom_boxplot(aes(group = Mb), width = 0.05, size=0.1, outlier.size=0.1) + 
+  scale_linetype_manual(name = expression(italic(F[ROH])), values = c(2, 2, 2)) +
+  scale_colour_manual(name = expression(italic(F[ROH])), values = c("black", "gray50", "gray")) +
+  scale_y_continuous(# Add a second axis and specify its features
+    sec.axis = sec_axis(trans=~.*1/2881.033286,
+                        name= expression(italic(F[ROH]))),
+    breaks = seq(0, 800, 200)
+  ) +
+  scale_x_continuous(breaks = seq(0, 5, 0.5)) +
+  xlab("Min length (Mb)") +
+  ylab(expression(paste(italic(ROH), " ",italic(KB/1000)))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())  +
+  theme(legend.position = c(0.8, 0.55))
+
+# Check output
+# p_roh
+
+```
+
+```{r}
+
+# Generate the plot of KBAVG/1000
+p_rohavg <-  
+  ggplot(rohreport, aes(x=Mb, y = KBAVG/1000)) +
+  geom_boxplot(aes(group = Mb), width = 0.05, size=0.1, outlier.size=0.1) + 
+  scale_y_continuous(breaks=seq(0, 10, 2)) +
+  xlab("Min length (Mb)") +
+  scale_x_continuous(breaks = seq(0, 5, 0.5)) +
+  ylab(expression(italic(KBAVG/1000))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+
+# Check output
+# p_rohavg
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = " "}
+
+# Combine and label the two plots by using the patchwork package and output the plot
+((p_roh + labs(tag = 'a')) / (p_rohavg + labs(tag = 'b'))) & theme(plot.tag = element_text(face = 'bold'))
+
+# Save plot
+ggsave(filename = "fig1.pdf",
+       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 600)
+
+
+```
+
+```{r}
+
+# Set the human generation time from reference [45] in the manuscript.
+gen_time <- 26.9
+
+# Set the estimated average year of birth of the sampled individuals
+origin <- 1960
+
+# Calculate the deviation delta = SROH - NROH and timing at each value of the minimum ROH-lenght (Mb > 0.6)
+deviation_timing <-
+  filter(rohreport,
+         Mb > 0.6) %>%
+  select(IID, NSEG, KB, Mb) %>%
+  mutate(NROH = NSEG,
+         SROH = KB/1000,
+         delta = SROH - NROH,
+         g = 100/(2*Mb),
+         years_back = g*gen_time,
+         Year = round(origin - years_back))
+
+# Chek output
+# deviation_timing
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = " "}
+
+# Assign plot
+NROH_SROH_plot <- 
+  ggplot(filter(rohreport, Mb > 0.3),
+         aes(x = KB/1000, y = NSEG)) +
+  geom_line(aes(group=IID), alpha = 0.25) +
+  geom_point(alpha = 0.25, shape = 16) +
+  geom_abline(intercept =0 , slope = 1) +
+  xlab(expression(paste("SROH (", italic(KB)/1000,")"))) +
+  ylab(expression(paste("NROH (", italic(NSEG),")"))) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# Show plot - outcommented since we use the saved plot instead for the main manuscript
+NROH_SROH_plot
+
+# Save plot 
+ggsave(filename = "fig2.pdf", plot = NROH_SROH_plot,
+       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 1200)
+
+```
+
+
+```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = " "}
+
+# Assign plot
+deviation_Year_plot <- 
+  ggplot(filter(deviation_timing, Mb < 1.6), aes(x = Year, y = delta)) +
+    # Draw smoothed lines per sample (group = IID)
+  geom_smooth(aes(x = Year, y = delta, group = IID), size = 0.5,
+              se = FALSE,
+              color = "gray",
+              method ="loess") +
+  # Draw boxplot across samples (group = Year)
+  geom_boxplot(aes(group = Year)) +
+  # Draw line for Sheep-DNA estimate
+  geom_vline(aes(xintercept = 300), linetype = "dotted", color = "black") +
+  geom_vline(aes(xintercept = 500), linetype = "dotted", color = "black") +
+  geom_vline(aes(xintercept = 700), linetype = "dotted", color = "black") +
+  # Plot the data points
+  geom_point(alpha = 0.25, shape = 16) +
+  ylab("Bottleneck effect (deviation)") +
+  scale_x_continuous(breaks = seq(0, 1000, 100)) +
+  scale_y_continuous(breaks = seq(0, 200, 50), limits = c(0, 200)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+# Show plot
+deviation_Year_plot
+
+# Save plot
+ggsave(filename = "fig3.pdf", plot = deviation_Year_plot,
+       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 1200)
+
+```
+
+
+
