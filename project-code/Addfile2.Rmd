@@ -55,7 +55,6 @@ filter_text <- "QUAL>30"
 merged_vcf <- "minQ30.snps.mergedsample.auto.vcf.gz"
 
 # Set file name of ROH report saved to disk
-
 rohreport_name <- "rohreportAddfile2.csv"
 
 ```
@@ -115,6 +114,7 @@ hkb <- NULL
 
 # Define the minimum ROH length - we use 50 values in steps of 100
 hzyg_vector <- seq(100, 5000, 100)
+# hzyg_vector <- seq(1000, 1500, 100)
 
 # Loop over the hkb values to create a ROH report for each minimum ROH length
 for (hkb in hzyg_vector) {
@@ -431,29 +431,6 @@ ggplot(filter(deviation_timing, Mb < 1.6), aes(x = Year, y = delta)) +
 ```
 
 
-```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plots of the number of runs of homozygosity NROH ($NSEQ$) against the total length of runs SROH ($KB/1000$) in the PLINK report for the minimum lengths of $ROH>0.3$Mb. At about $1.0$Mb the points are maximum shifted to the right from the diagonal."}
-
-# Assign plot
-NROH_SROH_plot <- 
-  ggplot(filter(roh_report, Mb > 0.3),
-         aes(x = KB/1000, y = NSEG)) +
-  geom_line(aes(group=IID), alpha = 0.25) +
-  geom_point(alpha = 0.25) +
-  geom_abline(intercept =0 , slope = 1) +
-  xlab(expression(paste("SROH (", italic(KB)/1000,")"))) +
-  ylab(expression(paste("NROH (", italic(NSEG),")"))) +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-
-# Show plot - outcommented since we use the saved plot instead for the main manuscript
-# NROH_SROH_plot
-
-# Save plot 
-ggsave(filename = "fig2_125x125v2.pdf", plot = NROH_SROH_plot,
-       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 600)
-
-```
-
-
 ```{r, fig.width = 7, fig.asp = 0.85, out.width="80%", fig.align="center", fig.cap = "Plot of deviation SROH ($KB/1000$) $-$ NROH ($NSEQ$) from the linear diagonal in the NROH versus SROH plots shown for minimum $ROH$ lengths between $0.4$ and $1.5$Mb. For all the samples the SROH is clearly below the diagonal (deviation $> 0$) for minimum $ROH$ lengths above $0.7-0.8$Mb and the maximum deviation is found at $1.0$Mb."}
 
 # Assign plot
@@ -507,10 +484,6 @@ deviation_Year_plot <-
 
 # Show plot
 deviation_Year_plot
-
-# Save plot 
-ggsave(filename = "fig3_125x125v2.pdf", plot = deviation_Year_plot,
-       device = "pdf", width = 12.5, height = 12.5, units = "cm", dpi = 600)
 
 ```
 
