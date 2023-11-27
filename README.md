@@ -1,6 +1,5 @@
 # wg-project - code files for paper: 
-# Gislason, H. SNP heterozygosity, relatedness and inbreeding of whole genomes from the isolated population of the Faroe Islands. BMC Genomics 24, 707 (2023). 
-# https://doi.org/10.1186/s12864-023-09763-x
+# Gislason, H. SNP heterozygosity, relatedness and inbreeding of whole genomes from the isolated population of the Faroe Islands. BMC Genomics 24, 707 (2023). https://doi.org/10.1186/s12864-023-09763-x
 
  Pre-processing files with both bash and R-code chuncks stored in RMarkdown format. These are not intended to be knitted to pdf- or html-files, but to be run as code blocks (chunks), either interactively one at a time when testing, or in a single run.
 
