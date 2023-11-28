@@ -1,4 +1,4 @@
-# wg-project - code files for paper: 
+# Bioinformatic R/Rmd-code files for paper: 
 # Gislason, H. SNP heterozygosity, relatedness and inbreeding of whole genomes from the isolated population of the Faroe Islands. BMC Genomics 24, 707 (2023). https://rdcu.be/drSK8 
 
  Pre-processing files with both bash and R-code chuncks stored in RMarkdown format. These are not intended to be knitted to pdf- or html-files, but to be run as code blocks (chunks), either interactively one at a time when testing, or in a single run.
